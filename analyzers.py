@@ -150,7 +150,7 @@ class PhishingAnalyzer(BaseAnalyzer):
         results.append(f"📝 Текст: {text_result['verdict']} ({text_result['confidence']:.1%})")
 
         urls = self._extract_urls(text)
-         # Внутри твоего анализа ссылок:
+        
         for url in urls:
             domain = self.extract_domain(url)
             url_result = self.vt_client.check_url(domain)
