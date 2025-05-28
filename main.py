@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 import telebot
 from telebot import types
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from analyzers2 import PhishingAnalyzer, VirusTotalClient, BaseAnalyzer
+from analyzers import PhishingAnalyzer, VirusTotalClient, BaseAnalyzer
 from safe_test import init_safety_test_handlers
 
 # Загрузка переменных окружения
