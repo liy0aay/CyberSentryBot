@@ -17,30 +17,24 @@
 - VirusTotal API для проверки URL
 
 Raises:
-    ValueError: При отсутсвии необходимых переменных окружения
+    ValueError: При отсутствии необходимых переменных окружения
 
 """
 import os
-import re
-import base64
-import requests
-from typing import Dict, List
 from dotenv import load_dotenv
 import telebot
 from telebot import types
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from analyzers2 import PhishingAnalyzer, VirusTotalClient, BaseAnalyzer
 from safe_test import init_safety_test_handlers
-from analyzers import VirusTotalClient, PhishingAnalyzer, BaseAnalyzer
-from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification,  AutoModelForSeq2SeqLM
 
-# загрузка переменных окружения
+# Загрузка переменных окружения
 load_dotenv()
 API_TOKEN = os.getenv("API_TOKEN")
 VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 
 if not API_TOKEN or not VIRUSTOTAL_API_KEY:
     raise ValueError("Отсутствуют необходимые переменные окружения")
-
 
 def load_nlp_model():
     """Загружает и инициализирует NLP модель для детекции спама/фишинга.
@@ -53,32 +47,21 @@ def load_nlp_model():
         Exception: При ошибках загрузки модели или токенизатора
     """   
     try:
-        tokenizer = AutoTokenizer.from_pretrained("ealvaradob/bert-finetuned-phishing")
-        model = AutoModelForSequenceClassification.from_pretrained("ealvaradob/bert-finetuned-phishing")
-        nlp = pipeline("text-classification", model=model, tokenizer=tokenizer)
-        return nlp, tokenizer
+        tokenizer = AutoTokenizer.from_pretrained("cybersectony/phishing-email-detection-distilbert_v2.1")
+        model = AutoModelForSequenceClassification.from_pretrained("cybersectony/phishing-email-detection-distilbert_v2.1")
+        return model, tokenizer
     except Exception as e:
         print(f"Ошибка загрузки модели: {e}")
         return None, None
 
-# Инициализация компонентов
-nlp, tokenizer = load_nlp_model()
+nlp_model, tokenizer = load_nlp_model()
+if nlp_model is None or tokenizer is None:
+    raise RuntimeError("Не удалось загрузить NLP модель")
+
 vt_client = VirusTotalClient(VIRUSTOTAL_API_KEY)
-analyzer = PhishingAnalyzer(vt_client, nlp, tokenizer)
+analyzer = PhishingAnalyzer(vt_client, nlp_model, tokenizer)
+
 bot = telebot.TeleBot(API_TOKEN)
-
-
-
-def perform_analysis(message: types.Message, analyzer: BaseAnalyzer):
-    """Выполняет анализ сообщения на фишинг и отправляет результат пользователю.
-
-    Args:
-        message (types.Message): Объект сообщения от пользователя
-        analyzer (BaseAnalyzer): Анализатор для проверки сообщений
-    """
-    results = analyzer.analyze_message(message.text)
-    bot.send_message(message.chat.id, "\n".join(results))
-
 
 def create_main_keyboard():
     """Создает клавиатуру с основными командами.
@@ -93,7 +76,6 @@ def create_main_keyboard():
     )
     return markup
 
-
 def get_help_text():
     """Генерирует текст справки о возможностях бота.
 
@@ -103,27 +85,20 @@ def get_help_text():
     return (
         "👋 Привет! Я антифишинговый бот.\n\n"
         "🛡️ Мои возможности:\n"
-        "- Проверка сообщений: Анализирую текст и ссылки на фишинг и вредоносность с помощью NLP и VirusTotal.\n"
+        "- Проверка сообщений: Анализирую текст и ссылки на фишинг и вредоносность с помощью предобученных моделей и VirusTotal.\n"
         "- Тест безопасности: Проверь свои знания о цифровых угрозах.\n\n"
         "👇 Используй кнопки ниже"
     )
 
-
-# инициализация теста по безопасности
 user_progress = {}
 init_safety_test_handlers(bot, user_progress, create_main_keyboard)
 
-
 @bot.message_handler(commands=["start", "help"])
 def send_welcome(message):
-    """Обрабатывает команды /start и /help, отправляет приветственное сообщение.
+    """Генерирует текст справки о возможностях бота.
 
-    Args:
-        message (types.Message): Входящее сообщение от пользователя
-
-    Behavior:
-        - Отправляет логотип с описанием функционала
-        - В случае ошибки отправляет текстовое описание
+    Returns:
+        str: Форматированное описание функционала бота
     """ 
     try:
         with open("CyberSentry.png", "rb") as photo_file:
@@ -147,7 +122,6 @@ def send_welcome(message):
             reply_markup=create_main_keyboard()
         )
 
-
 @bot.message_handler(commands=["check"])
 def check_handler(message):
     """Обрабатывает команду /check для ручной проверки текста.
@@ -165,11 +139,7 @@ def check_handler(message):
         result = analyzer.analyze_message(text_to_check)
         bot.reply_to(message, "\n".join(result), parse_mode="Markdown")
     except IndexError:
-        bot.reply_to(----
-            message,
-            "Пожалуйста, укажите текст для проверки после команды /check"
-        )
-
+        bot.reply_to(message, "Пожалуйста, укажите текст для проверки после команды /check")
 
 @bot.message_handler(content_types=["text"])
 def handle_message(message):
@@ -188,22 +158,21 @@ def handle_message(message):
     if text == "🔍 Проверить сообщение/ссылку":
         bot.reply_to(message, "Хорошо, отправьте мне сообщение, которое нужно проверить.")
     elif text == "🎓 Пройти тест":
-        bot.send_message(
-            message.chat.id,
-            "Начинаем тест!",
-            reply_markup=types.ReplyKeyboardRemove()
-        )
-        bot.send_message(
-            message.chat.id,
-            "Пожалуйста, используйте команду /safety_test для начала теста"
-        )
+        bot.send_message(message.chat.id, "Начинаем тест!", reply_markup=types.ReplyKeyboardRemove())
+        bot.send_message(message.chat.id, "Пожалуйста, используйте команду /safety_test для начала теста")
     elif not text.startswith("/"):
-        perform_analysis(message, analyzer)
-
+        results = analyzer.analyze_message(text)
+        response = [
+            "🔍 Результаты анализа:",
+            *results,
+            "\n⚠️ Это автоматический анализ. Всегда проверяйте подозрительные сообщения дополнительно!"
+        ]
+        bot.send_message(message.chat.id, "\n".join(response), parse_mode="Markdown")
 
 if __name__ == "__main__":
     print("Бот запущен...")
     try:
-        bot.polling(none_stop=True)
+        bot.polling(non_stop=True)
     except Exception as e:
         print(f"Ошибка polling: {e}")
+
